@@ -47,6 +47,7 @@ void __INLINE__ null_log(struct ccp_datapath *dp, enum ccp_log_level level, cons
  *   2. an optional callback function for logging
  *   3. a pointer to memory allocated for a list of ccp_connection objects
  *      (as well as the number of connections it can hold)
+ *   4. a fallback timeout value in microseconds (must be > 0)
  *
  * This function returns 0 if the structure has been initialized correctly and a negative value
  * with an error code otherwise. 
@@ -60,7 +61,8 @@ int ccp_init(struct ccp_datapath *datapath) {
         datapath->now                    ==  NULL  ||
         datapath->since_usecs            ==  NULL  ||
         datapath->after_usecs            ==  NULL  ||
-        datapath->ccp_active_connections ==  NULL
+        datapath->ccp_active_connections ==  NULL  ||
+        datapath->fto_us                 ==  0
     ) {
         return -1;
     }
@@ -76,6 +78,7 @@ int ccp_init(struct ccp_datapath *datapath) {
     }
 
     datapath->time_zero = datapath->now();
+    datapath->last_msg_sent = 0;
 
     return 0;
 }
@@ -145,7 +148,11 @@ int ccp_invoke(struct ccp_connection *conn) {
         return -1;
     }
 
-		state = get_ccp_priv_state(conn);
+    if (datapath->last_msg_sent && datapath->since_usecs(datapath->last_msg_sent) > datapath->fto_us) {
+        return 1;
+    }
+
+    state = get_ccp_priv_state(conn);
     if (!(state->sent_create)) {
         // try contacting the CCP again
         // index of pointer back to this sock for IPC callback
@@ -418,6 +425,9 @@ int ccp_read_msg(
     }
     msg_ptr = buf + ok;
 
+
+    _turn_off_fto_timer(datapath);
+
     // INSTALL_EXPR message is for all flows, not a specific connection
     // sock_id in this message should be disregarded (could be before any flows begin)
     if (hdr.Type == INSTALL_EXPR) {
@@ -541,7 +551,18 @@ int send_conn_create(
     conn->last_create_msg_sent = datapath->now();
     msg_size = write_create_msg(msg, REPORT_MSG_SIZE, conn->index, cr);
     ok = datapath->send_msg(conn, msg, msg_size);
+    _update_fto_timer(datapath);
     return ok;
+}
+
+void _update_fto_timer(struct ccp_datapath *datapath) {
+    if (!datapath->last_msg_sent) {
+        datapath->last_msg_sent = datapath->now();
+    }
+}
+
+void _turn_off_fto_timer(struct ccp_datapath *datapath) {
+    datapath->last_msg_sent = 0;
 }
 
 // send datapath measurements
@@ -565,5 +586,6 @@ int send_measurement(
     msg_size = write_measure_msg(msg, REPORT_MSG_SIZE, conn->index, program_uid, fields, num_fields);
     libccp_trace("[sid=%d] In %s\n", conn->index, __FUNCTION__);
     ok = conn->datapath->send_msg(conn, msg, msg_size);
+    _update_fto_timer(datapath);
     return ok;
 }

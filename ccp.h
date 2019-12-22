@@ -148,6 +148,9 @@ struct ccp_datapath {
     // list of active connections this datapath is handling
     struct ccp_connection* ccp_active_connections;
 
+    u64 fto_us;
+    u64 last_msg_sent;
+
     size_t max_programs;
     // list of datapath programs
     void *programs;
@@ -209,6 +212,9 @@ int ccp_read_msg(
  * Will invoke the send and measurement machines.
  */
 int ccp_invoke(struct ccp_connection *conn);
+
+void _update_fto_timer(struct ccp_datapath *datapath);
+void _turn_off_fto_timer(struct ccp_datapath *datapath);
 
 #ifdef __CPLUSPLUS__
 } // extern "C"
