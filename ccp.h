@@ -214,6 +214,7 @@ int ccp_read_msg(
 int ccp_invoke(struct ccp_connection *conn);
 
 void _update_fto_timer(struct ccp_datapath *datapath);
+bool _check_fto(struct ccp_datapath *datapath);
 void _turn_off_fto_timer(struct ccp_datapath *datapath);
 
 #ifdef __CPLUSPLUS__

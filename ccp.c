@@ -146,8 +146,8 @@ int ccp_invoke(struct ccp_connection *conn) {
         return LIBCCP_NULL_ARG;
     }
 
-    if (datapath->last_msg_sent && datapath->since_usecs(datapath->last_msg_sent) > datapath->fto_us) {
-        return 1;
+    if (_check_fto(datapath)) {
+        return LIBCCP_FALLBACK_TIMED_OUT;
     }
 
     state = get_ccp_priv_state(conn);
@@ -565,6 +565,16 @@ void _update_fto_timer(struct ccp_datapath *datapath) {
     }
 }
 
+/*
+ * Returns true if CCP has timed out, false otherwise
+ */
+bool _check_fto(struct ccp_datapath *datapath) {
+    // TODO not sure how well this will scale with many connections,
+    //      may be better to make it per conn
+    return datapath->last_msg_sent &&
+           (datapath->since_usecs(datapath->last_msg_sent) > datapath->fto_us);
+}
+
 void _turn_off_fto_timer(struct ccp_datapath *datapath) {
     datapath->last_msg_sent = 0;
 }
@@ -588,7 +598,9 @@ int send_measurement(
 
     msg_size = write_measure_msg(msg, REPORT_MSG_SIZE, conn->index, program_uid, fields, num_fields);
     libccp_trace("[sid=%d] In %s\n", conn->index, __FUNCTION__);
-    ok = conn->datapath->send_msg(conn, msg, msg_size);
-    _update_fto_timer(datapath);
-    return ok;
+    ret = conn->datapath->send_msg(conn, msg, msg_size);
+    if(ret) {
+        _update_fto_timer(datapath);
+    }
+    return ret;
 }
